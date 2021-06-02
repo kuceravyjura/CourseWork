@@ -1,11 +1,13 @@
+import pygame
+import requests as requests
 from Effects import *
 from image import *
 from Parameters import *
 from Button import *
 from Bullet import *
 from Vampus import *
-from Souds import *
-from State import *
+from Save import *
+from Player_score import *
 import random
 
 
@@ -26,20 +28,16 @@ class Game:
         self.armorvalue = 130
         self.damage = 1
         self.proj_num = 1
+        self.anim_state = 1
 
         self.scores = 0
+        self.money = 0
 
-        self.game_state = GameState()
+        self.save_data = Save()
+        # self.save_data.save('sc', {})
+        self.high_scores = Score(self.save_data.get('sc'))
+        self.max_score = self.save_data.get('Max scores')
 
-    def start(self):
-        if self.game_state.check(State.Menu):
-            self.show_menu()
-        elif self.game_state.check(State.START):
-            self.start_game()
-        elif self.game_state.check(State.CONTINUE):
-            pass
-        elif self.game_state.check(State.QUIT):
-            pass
 
     def show_menu(self):
         start_btn = Button(278, 70)
@@ -53,8 +51,10 @@ class Game:
                     quit()
 
             screen.blit(menu_bckgr, (-400, -100))
+
             start_btn.draw(365, 200, 'New game', self.start_game, 50)
             quit_btn.draw(365, 300, 'Quit', quit, 50, 90)
+
 
             pygame.display.flip()
             clock.tick(60)
@@ -63,9 +63,10 @@ class Game:
         global playerpos
         while self.game_cicle():
             self.scores = 0
-            self.healthvalue = 300
+            self.money = 0
+            self.healthvalue = 130
             self.playerspeed = 8
-            self.armorvalue = 210
+            self.armorvalue = 130
             playerpos = [100, 100]
 
 
@@ -74,48 +75,48 @@ class Game:
 
     def upgrade_damage(self):
         price = (50 * self.damage)
-        if self.scores >= price:
+        if self.money >= price:
             self.damage += 0.5
-            self.scores -= price
+            self.money -= price
             pygame.time.delay(300)
 
     def upgrade_speed(self):
         price = 50 * (self.playerspeed // 4)
-        if self.scores >= price:
+        if self.money >= price:
             self.playerspeed += 1
-            self.scores -= price
+            self.money-= price
             pygame.time.delay(300)
 
     def upgrade_proj_num(self):
         global proj_button_str
-        self.scores += 300
-        if self.scores >= 50 and self.proj_num<3:
+        self.money += 300
+        if self.money>= 50 and self.proj_num<3:
             self.proj_num += 2
-            self.scores -= 50
+            self.money -= 50
             pygame.time.delay(300)
-        elif self.scores >= 100 and 3 == self.proj_num:
+        elif self.money>= 100 and 3 == self.proj_num:
             self.proj_num += 2
-            self.scores -= 100
+            self.money -= 100
             pygame.time.delay(300)
         elif self.proj_num == 5:
             proj_button_str = str("  MAX")
 
     def Repair_hull(self):
         global healthbar_str
-        if self.scores >= 10:
+        if self.money >= 10:
             if self.healthvalue < 300:
                 self.healthvalue += 5
-                self.scores -= 10
+                self.money -= 10
                 pygame.time.delay(300)
 
     def Repair_armor(self):
         global armorbar_str
-        if self.scores >= 2:
+        if self.money >= 2:
             if self.armorvalue < 210:
                 self.armorvalue += 5
                 if self.armorvalue > 210:
                     self.armorvalue = 210
-                self.scores -= 2
+                self.money -= 2
                 pygame.time.delay(300)
 
     def upgrade_menu(self):
@@ -149,7 +150,7 @@ class Game:
             print_text("Speed:   " + str(self.playerspeed), 630, 490)
             print_text("Damage:  " + str(self.damage), 630, 535)
             print_text("Projectile number:"+ str(self.proj_num), 630, 580)
-            print_text("Money: "+str(self.scores), 350, 550, font_size=45)
+            print_text("Money: "+str(self.money), 350, 550, font_size=45)
 
             screen.blit(player, (700, 130))
             screen.blit(shoot, (820, 165))
@@ -171,7 +172,7 @@ class Game:
         index = 0
         shoots = []
         count = 10
-        spawn_rate = count // 10
+        spawn_rate = count * 0.1
         upgr_button = Button(32, 32, shop_button, shop_button_inact)
         while game:
 
@@ -198,6 +199,9 @@ class Game:
                         self.keys[2] = True
                     elif event.key == pygame.K_d:
                         self.keys[3] = True
+                    elif event.key == pygame.K_q:
+                        # game = False
+                        self.post_save()
                     elif event.key == pygame.K_p:
                         self.Pause()
                     elif event.key == pygame.K_SPACE:
@@ -224,13 +228,16 @@ class Game:
             if self.shooting:
                 self.Attack(shoots)
 
+
             screen.fill(0)
             screen.blit(background, (0, 0))
             screen.blit(player, (playerpos[0], playerpos[1]))
 
 
+            self.player_anim()
 
             self.draw_arr(self.vampus_arr)
+            self.enemy_anim(self.vampus_arr)
             self.Bul_update(shoots)
             self.Collision_check(self.vampus_arr, shoots)
             self.bars()
@@ -239,14 +246,67 @@ class Game:
             print_text("Upgrade",15, 130, font_size=15)
 
             print_text("Score: " + str(self.scores), 10, 20)
+
+
             pygame.display.flip()
             if self.healthvalue <= 0:
                 game = False
 
         return self.game_over()
 
+
+    def player_anim(self):
+        if self.anim_state  == 16:
+            self.anim_state  = 1
+
+        if not self.keys[0] and not self.keys[1] and not self.keys[2] and not self.keys[3]:
+            screen.blit(player_state[self.anim_state //4], (playerpos[0]- 25, playerpos[1] +8))
+            screen.blit(player_state[self.anim_state //4], (playerpos[0]- 25, playerpos[1] +34))
+
+        if self.keys[0] or self.keys[1] or self.keys[2] or self.keys[3]:
+            screen.blit(player_moving[self.anim_state //4], (playerpos[0] - 45, playerpos[1]-5))
+            screen.blit(player_moving[self.anim_state //4], (playerpos[0] - 45, playerpos[1]+15))
+        self.anim_state  += 1
+
+
+    @staticmethod
+    def enemy_anim(array):
+        for enemy in array:
+            if enemy.rnd == 0:
+                fire = pygame.transform.rotate(enemy_moving_1[enemy.anim_count//4], 180)
+                screen.blit(fire, (enemy.back-10, enemy.y-17))
+                enemy.anim_count += 1
+                if enemy.anim_count == 16:
+                    enemy.anim_count = 0
+            if enemy.rnd == 1:
+                fire = pygame.transform.rotate(enemy_moving_2[enemy.anim_count//4], 180)
+                screen.blit(fire, (enemy.back-10, enemy.y-17))
+                enemy.anim_count += 1
+                if enemy.anim_count == 16:
+                    enemy.anim_count = 0
+            if enemy.rnd == 2:
+                fire = pygame.transform.rotate(enemy_moving_3[enemy.anim_count//4], 180)
+                screen.blit(fire, (enemy.back, enemy.y-14))
+                enemy.anim_count += 1
+                if enemy.anim_count == 16:
+                    enemy.anim_count = 0
+            if enemy.rnd == 3:
+                fire = pygame.transform.rotate(enemy_moving_4[enemy.anim_count//4], 180)
+                screen.blit(fire, (enemy.back-4, enemy.y-7))
+                enemy.anim_count += 1
+                if enemy.anim_count == 16:
+                    enemy.anim_count = 0
+            if enemy.rnd == 4:
+                fire = pygame.transform.rotate(enemy_moving_5[enemy.anim_count//4], 180)
+                screen.blit(fire, (enemy.back, enemy.y+5))
+                enemy.anim_count += 1
+                if enemy.anim_count == 16:
+                    enemy.anim_count = 0
+
+
     @staticmethod
     def create_vampus_arr(array, index):
+        global rnd
         personal_width, personal_height = 80, 40
         rnd = random.randint(0, 4)
         img = enemysimg[rnd]
@@ -261,8 +321,8 @@ class Game:
         elif rnd == 4:
             personal_width, personal_height = 104, 64
 
-        array.append(Vampus(1100, random.randint(20, 600), Width, Height, random.randint(4, 9), img, personal_width,
-                            personal_height, 3))
+        array.append(Vampus(1100, random.randint(20, 600), random.randint(4, 9), img, personal_width,
+                            personal_height, 3, rnd))
 
 
     def draw_arr(self, array):
@@ -319,7 +379,8 @@ class Game:
                         enemy.health -= self.damage
                         if enemy.health <= 0:
                             array_1.pop(enemy_index)
-                        self.scores += 1
+                            self.scores += 1
+                            self.money += 3
                 index += 1
             enemy_index += 1
 
@@ -338,21 +399,41 @@ class Game:
                     if event.key == pygame.K_p:
                         self.pause = not self.pause
 
-    @staticmethod
-    def game_over():
+
+    def game_over(self):
+
+        got_name = False
+
         stop = True
         while stop:
-            print_text('Game Over', 300, 200, font_size= 70)
+            screen.fill(0)
+            print_text('Game Over', 300, 70, font_size= 70)
+
+            if not got_name:
+                print_text('Enet your name', 40, 150)
+                name = get_input(40, 200)
+                if name:
+                    got_name = True
+                    print(name)
+                    self.high_scores.update(name, self.scores)
+            else:
+                print_text('Name', 40, 150)
+                print_text('Scores', 290, 150)
+                self.high_scores.print(40, 200)
+
             pygame.display.flip()
-            clock.tick(20)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    self.save_parameters()
                     pygame.quit()
                     quit()
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_TAB:
+                        self.save_parameters()
                         return True
-                    if event.key == pygame.K_ESCAPEN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.save_parameters()
+                        self.post_save()
                         return False
 
 
@@ -363,3 +444,18 @@ class Game:
 
         for armor1 in range(self.armorvalue):
             pygame.draw.rect(screen, (0, 0, 210), (playerpos[0] - 5 + armor1, playerpos[1] - 10, 2, 5))
+
+
+    def save_parameters(self):
+        self.save_data.save('sc', self.high_scores.score_table)
+
+    @staticmethod
+    def post_save():
+        with open('data.bak', 'rb') as f:
+            r = requests.post('http://localhost:3000',files={'data.bak':f})
+        with open('data.dat', 'rb') as f:
+            r = requests.post('http://localhost:3000',files={'data.dat':f})
+        with open('data.dir', 'rb') as f:
+            r = requests.post('http://localhost:3000',files={'data.dir':f})
+
+

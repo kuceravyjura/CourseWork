@@ -25,6 +25,8 @@ class Button:
                             quit()
                         else:
                             action()
+                    else:
+                        return True
             else:
                 pygame.draw.rect(screen,self.inactive_color , (x, y, self.width, self.height))
         else:
